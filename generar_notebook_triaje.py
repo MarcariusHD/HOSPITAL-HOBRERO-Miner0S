@@ -193,24 +193,39 @@ for r in rects2:
 b64_fig2 = fig_to_b64(fig2)
 
 # Gráfico 3: Matriz de Confusión (Pregunta 9)
-fig3, ax3 = plt.subplots(figsize=(6.5, 4.8))
-cax = ax3.matshow(matriz, cmap='Blues', alpha=0.75)
-for (i, j), z in np.ndenumerate(matriz):
-    pct_cell = (z / matriz.sum()) * 100
-    label_type = ""
-    if i == 0 and j == 0: label_type = "Verdadero Negativo (TN)\nUrgente correcto"
-    elif i == 0 and j == 1: label_type = "FALSO POSITIVO (FP)\n⚠️ ERROR CRÍTICO:\nUrgente clasificado como leve"
-    elif i == 1 and j == 0: label_type = "Falso Negativo (FN)\nLeve clasificado como urgente"
-    elif i == 1 and j == 1: label_type = "Verdadero Positivo (TP)\nLeve correcto"
-    ax3.text(j, i, f"{z:,}\n({pct_cell:.1f}%)\n{label_type}", ha='center', va='center', fontsize=8.5, fontweight='bold',
-             color='#991B1B' if (i == 0 and j == 1) else '#0F172A')
+fig3, ax3 = plt.subplots(figsize=(8, 6.2))
+cax = ax3.imshow(matriz, cmap='Blues', alpha=0.6, interpolation='nearest')
 
+ax3.xaxis.set_ticks_position('bottom')
 ax3.set_xticks([0, 1])
 ax3.set_yticks([0, 1])
-ax3.set_xticklabels(['Predicción: Urgente (0)', 'Predicción: No Urgente (1)'], fontsize=9.5, fontweight='bold')
-ax3.set_yticklabels(['Real: Urgente (0)', 'Real: No Urgente (1)'], fontsize=9.5, fontweight='bold')
-ax3.set_title("Pregunta 9: Matriz de Confusión en Conjunto de Prueba (Test N=16.000)", fontsize=11, fontweight='bold', pad=15)
-fig3.colorbar(cax, fraction=0.046, pad=0.04)
+ax3.set_xticklabels(['Predicción: Clase 0\n(Urgente: Triajes 1-3)', 'Predicción: Clase 1\n(No Urgente: Triajes 4-5)'], fontsize=10.5, fontweight='bold')
+ax3.set_yticklabels(['Real: Clase 0\n(Urgente: Triajes 1-3)', 'Real: Clase 1\n(No Urgente: Triajes 4-5)'], fontsize=10.5, fontweight='bold')
+ax3.set_xlabel('Clasificación Asignada por el Modelo', fontsize=11, fontweight='bold', labelpad=12)
+ax3.set_ylabel('Condición Clínica Real', fontsize=11, fontweight='bold', labelpad=12)
+ax3.set_title('Pregunta 9: Matriz de Confusión en Conjunto de Prueba (N = 16.000)\nEvaluación de Desempeño en Urgencias', fontsize=12, fontweight='bold', pad=15)
+
+# Textos dentro de cada celda con tipografía limpia y sin desbordes
+total_mat = matriz.sum()
+ax3.text(0, 0, f'{tn:,}\n({tn/total_mat*100:.1f}%)\n\nVerdadero Negativo (TN)\nUrgente bien clasificado\n[Atención prioritaria]', 
+        ha='center', va='center', fontsize=9, fontweight='bold', color='#0F172A')
+
+ax3.text(1, 0, f'{fp:,}\n({fp/total_mat*100:.1f}%)\n\nFALSO POSITIVO (FP)\n⚠️ ERROR CRÍTICO\nUrgente desviado a leve\n[Riesgo clínico vital]', 
+        ha='center', va='center', fontsize=9, fontweight='bold', color='#991B1B')
+
+ax3.text(0, 1, f'{fn:,}\n({fn/total_mat*100:.1f}%)\n\nFalso Negativo (FN)\nLeve clasificado urgente\n[Sobrecarga de recurso]', 
+        ha='center', va='center', fontsize=9, fontweight='bold', color='#0F172A')
+
+ax3.text(1, 1, f'{tp:,}\n({tp/total_mat*100:.1f}%)\n\nVerdadero Positivo (TP)\nLeve bien clasificado\n[Derivación rápida]', 
+        ha='center', va='center', fontsize=9, fontweight='bold', color='#0F172A')
+
+cbar = fig3.colorbar(cax, fraction=0.046, pad=0.04)
+cbar.ax.tick_params(labelsize=9)
+
+# Anotación debajo de la gráfica
+fig3.text(0.5, -0.06, '⚠️ Prioridad Médica: Reducir los Falsos Positivos (FP = 2.224) para evitar derivar pacientes graves al circuito ambulatorio.', 
+         ha='center', fontsize=9.5, fontweight='bold', bbox=dict(boxstyle='round,pad=0.55', fc='#FEF2F2', ec='#EF4444', lw=1.5))
+
 b64_fig3 = fig_to_b64(fig3)
 
 # Gráfico 4: Coeficientes de Regresión Logística (Pregunta 10)
