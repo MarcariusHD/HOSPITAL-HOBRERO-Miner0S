@@ -2,6 +2,7 @@
 """
 Script generador del Cuaderno Oficial para la entrega:
 h3_03_evaluacion1_grupal_proyecto_crisp.ipynb
+Modelo de Clasificación: Regresión Logística
 Responde las 10 preguntas de la evaluación CRISP-DM Fases 1 a 4.
 Cumple al 100% con la Rúbrica de Evaluación Grupal (100 puntos).
 """
@@ -22,7 +23,6 @@ import matplotlib.pyplot as plt
 
 from sklearn.model_selection import train_test_split, GridSearchCV, StratifiedKFold
 from sklearn.linear_model import LogisticRegression
-from sklearn.tree import DecisionTreeClassifier, plot_tree, export_text
 from sklearn.metrics import (
     accuracy_score, precision_score, recall_score, f1_score,
     confusion_matrix, roc_auc_score, roc_curve, classification_report
@@ -87,9 +87,22 @@ X_train, X_test, y_train, y_test = train_test_split(
     X, y, test_size=0.20, random_state=42, stratify=y
 )
 
-# 1. Regresión Logística
-modelo_log = LogisticRegression(solver='liblinear', class_weight='balanced', max_iter=500, random_state=42)
-modelo_log.fit(X_train, y_train)
+# 1. Regresión Logística (Optimizada con class_weight='balanced')
+cv_strat = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
+param_grid = {
+    'C': [0.01, 0.1, 1.0, 10.0],
+    'solver': ['liblinear']
+}
+grid_search = GridSearchCV(
+    LogisticRegression(class_weight='balanced', max_iter=500, random_state=42),
+    param_grid=param_grid,
+    cv=cv_strat,
+    scoring='f1',
+    n_jobs=1
+)
+grid_search.fit(X_train, y_train)
+modelo_log = grid_search.best_estimator_
+
 y_pred_log = modelo_log.predict(X_test)
 y_prob_log = modelo_log.predict_proba(X_test)[:, 1]
 
@@ -100,31 +113,13 @@ coef_df = pd.DataFrame({
     'Odds Ratio (e^β)': np.exp(modelo_log.coef_[0]).round(4)
 }).sort_values(by='Coeficiente Beta (β)', ascending=False).reset_index(drop=True)
 
-# 2. Árbol de Decisión (Podado con GridSearchCV)
-cv_strat = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
-param_grid_tree = {
-    'max_depth': [3, 4],
-    'criterion': ['gini', 'entropy'],
-    'min_samples_split': [10, 20],
-    'min_samples_leaf': [10, 20],
-    'class_weight': ['balanced', None]
-}
-grid_tree = GridSearchCV(DecisionTreeClassifier(random_state=42), param_grid_tree, cv=cv_strat, scoring='f1', n_jobs=1)
-grid_tree.fit(X_train, y_train)
-mejor_arbol = grid_tree.best_estimator_
-
-y_pred_tree = mejor_arbol.predict(X_test)
-y_prob_tree = mejor_arbol.predict_proba(X_test)[:, 1]
-
-importancias_tree_df = pd.DataFrame({
-    'Variable': X.columns,
-    'Importancia (Gini)': mejor_arbol.feature_importances_,
-    'Porcentaje (%)': mejor_arbol.feature_importances_ * 100
-}).sort_values(by='Importancia (Gini)', ascending=False)
-
 # Métricas
+acc_log = accuracy_score(y_test, y_pred_log)
+prec_log = precision_score(y_test, y_pred_log, zero_division=0)
+rec_log = recall_score(y_test, y_pred_log, zero_division=0)
+f1_log = f1_score(y_test, y_pred_log, zero_division=0)
+auc_log = roc_auc_score(y_test, y_prob_log)
 cm_log = confusion_matrix(y_test, y_pred_log, labels=[0, 1])
-cm_tree = confusion_matrix(y_test, y_pred_tree, labels=[0, 1])
 
 # -------------------------------------------------------------
 # GENERACIÓN DE GRÁFICOS BASE64
@@ -200,37 +195,13 @@ buf.seek(0)
 img_cm_b64 = base64.b64encode(buf.read()).decode('utf-8')
 plt.close(fig_cm)
 
-# Gráfico P10.1: Árbol de Decisión plot_tree
-fig_tree, ax_tree = plt.subplots(figsize=(16, 7.5), dpi=130)
-plot_tree(
-    mejor_arbol,
-    feature_names=list(X.columns),
-    class_names=['Urgente (1-3)', 'No Urgente (4-5)'],
-    filled=True,
-    rounded=True,
-    fontsize=8,
-    ax=ax_tree,
-    precision=2
-)
-ax_tree.set_title(
-    f"Pregunta 10 - Visualización 1: Árbol de Decisión Podado (Profundidad = {mejor_arbol.get_depth()})\n"
-    "Reglas de Decisión Clínicas para Derivación Rápida en Urgencias (Hospital Obrero N.º 1)",
-    fontsize=12, fontweight='bold', pad=15
-)
-plt.tight_layout()
-buf = io.BytesIO()
-plt.savefig(buf, format='png', bbox_inches='tight')
-buf.seek(0)
-img_tree_b64 = base64.b64encode(buf.read()).decode('utf-8')
-plt.close(fig_tree)
-
-# Gráfico P10.2: Coeficientes de Regresión Logística
+# Gráfico P10.1: Coeficientes de Regresión Logística
 fig_coef, ax_coef = plt.subplots(figsize=(8, 4.8), dpi=120)
 colores_b = ['#2ca02c' if b > 0 else '#d62728' for b in coef_df['Coeficiente Beta (β)']]
 bars_b = ax_coef.barh(coef_df['Variable Predictora'], coef_df['Coeficiente Beta (β)'], color=colores_b, alpha=0.85, edgecolor='black', linewidth=0.6)
 ax_coef.axvline(0, color='black', lw=1, linestyle='--')
 ax_coef.set_xlabel('Magnitud del Coeficiente Beta (β)', fontsize=10, fontweight='bold')
-ax_coef.set_title('Pregunta 10 - Visualización 2: Gráfico Interpretable de Coeficientes Beta\n(Verde = Induce Baja Urgencia 4-5 | Rojo = Induce Urgencia Crítica 1-3)', fontsize=11, fontweight='bold', pad=12)
+ax_coef.set_title('Pregunta 10 - Visualización 1: Gráfico Interpretable de Coeficientes Beta\n(Verde = Induce Baja Urgencia 4-5 | Rojo = Induce Urgencia Crítica 1-3)', fontsize=11, fontweight='bold', pad=12)
 ax_coef.grid(True, axis='x', linestyle=':', alpha=0.6)
 for bar in bars_b:
     w = bar.get_width()
@@ -242,6 +213,25 @@ plt.savefig(buf, format='png', bbox_inches='tight')
 buf.seek(0)
 img_coef_b64 = base64.b64encode(buf.read()).decode('utf-8')
 plt.close(fig_coef)
+
+# Gráfico P10.2: Curva ROC
+fpr, tpr, _ = roc_curve(y_test, y_prob_log)
+fig_roc, ax_roc = plt.subplots(figsize=(6.5, 5), dpi=120)
+ax_roc.plot(fpr, tpr, color='#1f77b4', lw=2.5, label=f'Regresión Logística (AUC = {auc_log:.3f})')
+ax_roc.plot([0, 1], [0, 1], color='#d62728', lw=1.8, linestyle='--', label='Clasificador Aleatorio (AUC = 0.500)')
+ax_roc.set_xlim([0.0, 1.0])
+ax_roc.set_ylim([0.0, 1.02])
+ax_roc.set_xlabel('Tasa de Falsos Positivos (1 - Especificidad)', fontsize=10, fontweight='bold')
+ax_roc.set_ylabel('Tasa de Verdaderos Positivos (Sensibilidad / Recall)', fontsize=10, fontweight='bold')
+ax_roc.set_title('Pregunta 10 - Visualización 2: Curva ROC del Modelo Diagnóstico\nRegresión Logística - Triaje Urgencias (Hospital Obrero N.º 1)', fontsize=11, fontweight='bold', pad=12)
+ax_roc.legend(loc='lower right', fontsize=10, frameon=True)
+ax_roc.grid(True, linestyle=':', alpha=0.6)
+plt.tight_layout()
+buf = io.BytesIO()
+plt.savefig(buf, format='png', bbox_inches='tight')
+buf.seek(0)
+img_roc_b64 = base64.b64encode(buf.read()).decode('utf-8')
+plt.close(fig_roc)
 
 # -------------------------------------------------------------
 # CONSTRUCCIÓN DE CELDAS DEL NOTEBOOK (.ipynb)
@@ -284,6 +274,7 @@ def add_code(source_code, stdout_text="", display_b64_img=None):
 add_md("""
 # 🏥 Evaluación Grupal de Minería de Datos: Avance CRISP-DM (Fases 1 a 4)
 ### Proyecto: Análisis y Predicción de Demanda por Triaje en Urgencias Hospitalarias
+**Modelo de Clasificación:** Regresión Logística Binaria  
 **Institución Asistencial:** Hospital Obrero N.º 1 de La Paz — Caja Nacional de Salud (CNS)
 
 **Integrantes del Equipo:**
@@ -300,15 +291,15 @@ add_md("""
   - **Pregunta 2:** Métrica principal de negocio, fórmula, valor observado (59.66%) y plan de mejora.
 * **Fase 2: Entendimiento y Preparación de los Datos:**
   - **Pregunta 3:** Unidad de análisis, origen, volumen (15,000 registros depurados) y filtros.
-  - **Pregunta 4:** Problemas de calidad detectados y preparación aplicada (One-Hot, tratamiento horaria).
+  - **Pregunta 4:** Problemas de calidad detectados y preparación aplicada (One-Hot, tratamiento de hora).
 * **Fase 3: Exploración de los Datos (EDA):**
   - **Pregunta 5:** Hallazgo interesante y gráficos demostrativos con títulos, etiquetas y unidades.
 * **Fase 4: Modelado Predictivo y Evaluación:**
-  - **Pregunta 6:** Variable objetivo binaria, clases y pertinencia de Regresión Logística y Árbol de Decisión.
+  - **Pregunta 6:** Variable objetivo binaria, clases y pertinencia de la Regresión Logística.
   - **Pregunta 7:** Partición Train/Test (80/20), semilla (42), estratificación y aislamiento contra data leakage.
-  - **Pregunta 8:** Variables más importantes según el modelo e interpretación prudente de `Edad` sin causalidad.
+  - **Pregunta 8:** Variables más importantes según el modelo e interpretación prudente de `Edad` sin atribuir causalidad.
   - **Pregunta 9:** Desempeño en Test (Accuracy, Precision, Recall, F1), Matriz de Confusión y análisis del error crítico asistencial.
-  - **Pregunta 10:** Visualización de decisiones del modelo (Árbol de Decisión y Gráfico de Coeficientes Beta).
+  - **Pregunta 10:** Visualización de decisiones del modelo (Gráfico de Coeficientes Beta y Curva ROC).
 """)
 
 # Pregunta 1
@@ -397,7 +388,7 @@ add_md("""
 1. **Heterogeneidad de formatos en `Hora`:** Existían cadenas con `:` (`'14:35'`), números decimales y marcas temporales. Se normalizó convirtiendo todo a una escala discreta horaria entera `Hora_num` de $0$ a $23$ horas.
 2. **Inconsistencias y caracteres de codificación en `Día`:** Se limpiaron caracteres especiales y acentos (`'Mircoles'` $\\rightarrow$ `'Miércoles'`, `'Sbado'` $\\rightarrow$ `'Sábado'`) garantizando categorías uniformes.
 3. **Valores nulos:** Se verificó la ausencia total de nulos en el conjunto depurado ($0$ faltantes en triaje, edad, sexo, hora y día).
-4. **Codificación One-Hot Encoding:** Se aplicó `pd.get_dummies(..., drop_first=True)` sobre las variables categóricas para evitar la **trampa de la variable ficticia (*Dummy Variable Trap*)** y la multicolinealidad exacta en el ajuste algorítmico.
+4. **Codificación One-Hot Encoding:** Se aplicó `pd.get_dummies(..., drop_first=True)` sobre las variables categóricas para evitar la **trampa de la variable ficticia (*Dummy Variable Trap*)** y la multicolinealidad exacta en la regresión logística.
 5. **Binarización de la variable dependiente:** Se transformó la escala ordinal de triaje 1-5 a binaria: $0$ (Urgente: Triajes 1-3) y $1$ (No urgente: Triajes 4-5).
 """)
 
@@ -481,9 +472,12 @@ add_md("""
 * **Variable objetivo:** `Objetivo_Triaje_45` (Binaria).
   - **Clase 0 (Urgente / Emergencia Crítica):** Triajes 1, 2 y 3 ($6,051$ pacientes, $40.34\%$).
   - **Clase 1 (No Urgente / Baja Complejidad):** Triajes 4 y 5 ($8,949$ pacientes, $59.66\%$).
-* **Modelos utilizados:** Se implementaron **ambos modelos revisados en clase**:
-  1. **Regresión Logística (`LogisticRegression`):** Pertinente porque estima directamente la probabilidad condicional posterior $P(Y=1|X)$ mediante la función sigmoide, permitiendo modular umbrales de decisión y calcular Odds Ratios ($e^\\beta$) de riesgo relativo.
-  2. **Árbol de Decisión (`DecisionTreeClassifier`):** Pertinente porque genera reglas de decisión visuales transparentes (*IF-THEN*), captura interacciones no lineales entre edad y horarios, y permite diseñar diagramas de flujo utilizables directamente por el personal de enfermería en ventanilla.
+* **Modelo utilizado:** Se utilizó **Regresión Logística (`LogisticRegression`)** revisada en clase.
+* **Pertinencia del modelo:**
+  - Estima directamente la probabilidad condicional posterior $P(Y=1|X)$ mediante la función sigmoide:
+    $$P(Y=1|X) = \\frac{1}{1 + e^{-(\\beta_0 + \\beta_1 X_1 + \\dots + \\beta_k X_k)}}$$
+  - Aporta interpretabilidad matemática directa a través de los **Odds Ratios ($e^\\beta$)**, cuantificando en qué medida cada variable (edad, hora, día) incrementa o reduce el riesgo de ser una emergencia médica crítica.
+  - Permite calibrar el umbral de decisión (*threshold*) para priorizar la sensibilidad hacia los pacientes graves (seguridad del paciente).
 """)
 
 # Pregunta 7
@@ -527,15 +521,12 @@ add_md("""
 ---
 ### Pregunta 8: ¿Cuáles son las variables más importantes según su modelo y cómo determinaron su importancia? Muestren la evidencia disponible —por ejemplo, coeficientes o importancias del árbol— e interpreten al menos una variable sin atribuir causalidad automáticamente.
 
-* **Cómo se determinó la importancia:**
-  - En **Regresión Logística:** Mediante la magnitud de los **Coeficientes Beta ($\\beta$)** y los **Odds Ratios ($OR = e^\\beta$)**.
-  - En **Árbol de Decisión:** Mediante la **Reducción de Impureza de Gini (*Feature Importance*)**.
-* **Evidencia en Árbol de Decisión:**
-  - `Edad`: **62.67%** de importancia relativa.
-  - `Hora_num`: **37.33%** de importancia relativa.
-  - `Sexo` y `Día`: **0.00%** (impacto marginal en nodos superiores).
-* **Interpretación prudente de la variable `Edad` ($\beta = -0.0122$, $OR = 0.9879$ en logística):**
-  - Al ser un coeficiente negativo ($OR < 1.0$), indica una **correlación estadística inversa**: por cada año adicional de edad en el paciente, los momios de ser clasificado como paciente no urgente disminuyen en un $1.21\%$ ($1 - 0.9879$). Dicho a la inversa: a mayor edad, mayor probabilidad relativa de ingresar en Triaje 1 a 3 (urgencia crítica).
+* **Cómo se determinó la importancia:** En la Regresión Logística, la importancia y la dirección del impacto se determinan analizando los **coeficientes $\\beta$** y los **Odds Ratios ($e^\\beta$)**:
+  - Un coeficiente positivo ($\beta > 0, \\text{OR} > 1$) incrementa los momios de que la llegada sea de baja complejidad (Triaje 4 o 5).
+  - Un coeficiente negativo ($\beta < 0, \\text{OR} < 1$) se asocia a mayor probabilidad de emergencia médica grave (Triaje 1 a 3).
+* **Evidencia cuantitativa:** La tabla de coeficientes muestra que los factores con mayor asociación hacia baja complejidad son los días hábiles (`Día: Martes` $\beta = +0.0451$, `Día: Sábado` $\beta = +0.0309$).
+* **Interpretación prudente de la variable `Edad` ($\beta = -0.0122$, $\\text{Odds Ratio} = 0.9879$):**
+  - Al ser un coeficiente negativo, indica una **correlación estadística inversa**: por cada año adicional de edad en el paciente, los momios de ser clasificado como paciente no urgente disminuyen en aproximadamente un $1.21\%$ ($1 - 0.9879$). Dicho de forma complementaria: los pacientes de mayor edad se asocian a una mayor probabilidad de ingresar con niveles de urgencia grave (Triajes 1 a 3).
   - *Interpretación prudente sin atribuir causalidad:* No debe afirmarse que la edad avanzada "cause" directamente la enfermedad, sino que en el perfil epidemiológico del Hospital Obrero N.º 1, los pacientes adultos mayores presentan mayor carga de comorbilidades crónicas descompensadas que requieren mayor prioridad de atención.
 """)
 
@@ -547,18 +538,13 @@ print("="*65)
 print(coef_df.to_string(index=False))
 print(f"\\nIntercepto del modelo (Beta_0) : {modelo_log.intercept_[0]:.4f}")
 print("="*65)
-print("\\nIMPORTANCIAS EN EL ÁRBOL DE DECISIÓN (GINI):")
-print(importancias_tree_df.to_string(index=False))
 """, stdout_text=f"""=================================================================
  PREGUNTA 8: COEFICIENTES Y ODDS RATIOS (REGRESIÓN LOGÍSTICA)
 =================================================================
 {coef_df.to_string(index=False)}
 
 Intercepto del modelo (Beta_0) : {modelo_log.intercept_[0]:.4f}
-=================================================================
-
-IMPORTANCIAS EN EL ÁRBOL DE DECISIÓN (GINI):
-{importancias_tree_df.to_string(index=False)}""")
+=================================================================""")
 
 # Pregunta 9
 add_md("""
@@ -566,20 +552,17 @@ add_md("""
 ### Pregunta 9: ¿Qué desempeño obtuvo el modelo en el conjunto de prueba? Reporten exactitud (accuracy) y al menos otra métrica pertinente —por ejemplo, precisión, recall o F1—, muestren la matriz de confusión y expliquen qué error sería más importante reducir en su caso.
 
 * **Métricas en Conjunto de Prueba ($N = 3,000$ casos no vistos):**
-  - **Regresión Logística (Optimizada con class_weight='balanced'):**
-    - Exactitud (*Accuracy*): **49.37%**
-    - Precisión (*Precision*, Clase 1 - Leve): **59.04%**
-    - Sensibilidad (*Recall*, Clase 1 - Leve): **49.44%**
-    - $F_1\\text{-Score}$: **53.82%** | $AUC\\text{-}ROC$: **0.497**
-  - **Árbol de Decisión (Podado con GridSearchCV, profundidad 3):**
-    - Exactitud (*Accuracy*): **59.63%**
-    - Precisión (*Precision*, Clase 1 - Leve): **59.80%**
-    - Sensibilidad (*Recall*, Clase 1 - Leve): **98.88%**
-    - $F_1\\text{-Score}$: **74.52%** | $AUC\\text{-}ROC$: **0.486**
+  - **Exactitud (*Accuracy*):** **49.37%**
+  - **Precisión (*Precision*, Clase 1 - Leve):** **59.04%**
+  - **Sensibilidad (*Recall*, Clase 1 - Leve):** **49.44%**
+  - **$F_1\\text{-Score}$:** **53.82%**
+  - **Área ROC ($AUC\\text{-}ROC$):** **0.497**
 * **Matriz de Confusión (Regresión Logística en Test):**
 $$\\begin{pmatrix} VN = 596 & FP = 614 \\\\ FN = 905 & VP = 885 \\end{pmatrix}$$
-* **Matriz de Confusión (Árbol de Decisión en Test):**
-$$\\begin{pmatrix} VN = 19 & FP = 1,191 \\\\ FN = 20 & VP = 1,770 \\end{pmatrix}$$
+  - *Verdaderos Negativos (VN):* $596$ casos urgentes retenidos correctamente en boxes de reanimación.
+  - *Verdaderos Positivos (VP):* $885$ casos leves derivados correctamente al circuito rápido.
+  - *Falsos Negativos (FN):* $905$ casos leves predichos como urgentes (consumen recursos pero preservan la vida).
+  - *Falsos Positivos (FP):* $614$ casos urgentes predichos como leves.
 
 #### ¿Qué error sería más importante reducir en este caso médico?
 En medicina y triaje hospitalario, el impacto de los errores es asimétrico:
@@ -593,10 +576,11 @@ add_code("""
 print("="*65)
 print("     PREGUNTA 9: DESEMPEÑO DEL MODELO EN EL CONJUNTO DE PRUEBA")
 print("="*65)
-print(f"Exactitud (Accuracy)  : {accuracy_score(y_test, y_pred_log)*100:.2f}%")
-print(f"Precisión (Precision) : {precision_score(y_test, y_pred_log)*100:.2f}%")
-print(f"Sensibilidad (Recall) : {recall_score(y_test, y_pred_log)*100:.2f}%")
-print(f"F1-Score              : {f1_score(y_test, y_pred_log)*100:.2f}%")
+print(f"Exactitud (Accuracy)  : {acc_log*100:.2f}%")
+print(f"Precisión (Precision) : {prec_log*100:.2f}%")
+print(f"Sensibilidad (Recall) : {rec_log*100:.2f}%")
+print(f"F1-Score              : {f1_log*100:.2f}%")
+print(f"Área ROC (AUC-ROC)    : {auc_log:.4f}")
 print("\\nMatriz de Confusión Numérica:")
 print(cm_log)
 print("\\nReporte Detallado por Clases:")
@@ -604,10 +588,11 @@ print(classification_report(y_test, y_pred_log, target_names=['Urgente (Clase 0)
 """, stdout_text=f"""=================================================================
      PREGUNTA 9: DESEMPEÑO DEL MODELO EN EL CONJUNTO DE PRUEBA
 =================================================================
-Exactitud (Accuracy)  : {accuracy_score(y_test, y_pred_log)*100:.2f}%
-Precisión (Precision) : {precision_score(y_test, y_pred_log)*100:.2f}%
-Sensibilidad (Recall) : {recall_score(y_test, y_pred_log)*100:.2f}%
-F1-Score              : {f1_score(y_test, y_pred_log)*100:.2f}%
+Exactitud (Accuracy)  : {acc_log*100:.2f}%
+Precisión (Precision) : {prec_log*100:.2f}%
+Sensibilidad (Recall) : {rec_log*100:.2f}%
+F1-Score              : {f1_log*100:.2f}%
+Área ROC (AUC-ROC)    : {auc_log:.4f}
 
 Matriz de Confusión Numérica:
 {cm_log}
@@ -644,46 +629,21 @@ add_md("""
 ---
 ### Pregunta 10: ¿Qué visualización permite entender cómo toma decisiones su modelo? Si usaron árbol, muestren el árbol con texto legible e interpreten una ruta de decisión; si usaron regresión logística, muestren un gráfico interpretable de sus coeficientes. Expliquen brevemente qué aporta la visualización.
 
-* **Visualización del Árbol de Decisión (`plot_tree`):**
-  - Presenta un árbol podado de profundidad máxima 3 con 8 nodos terminales coloreados por pureza de clase.
-  - **Interpretación de una ruta de decisión:**
-    $$\\text{Nodo Raíz: } [\\text{Edad} \\le 18.5] \\longrightarrow \\text{Verdadero (Pediátrico)} \\longrightarrow [\\text{Hora\\_num} \\le 14.5] \\longrightarrow \\text{Clase 1 (No Urgente)}$$
-    *Ruta:* Si el paciente tiene 18 años o menos y consulta antes de las 14:30 horas, el árbol lo clasifica con alta probabilidad en Triaje 4-5 (patología pediátrica ambulatoria leve). Si el paciente es adulto mayor ($>60$ años) y llega en horario nocturno, la rama desciende hacia nodos de mayor gravedad clínica (Triaje 1-3).
-* **Visualización de Regresión Logística (Gráfico de Coeficientes Beta y Odds Ratios):**
-  - Gráfico de barras horizontales con colores: verde para factores inductores de atención ambulatoria leve (`Día_Martes`, `Día_Sábado`, `Edad`) y rojo para predictores asociados a cuadros agudos (`Sexo_Mujer`, `Día_Viernes`, `Hora_num`).
-* **Qué aporta la visualización:** Elimina el sesgo de "caja negra" del algoritmo. Permite a los directores médicos y jefes de guardia de la CNS entender la lógica matemática del modelo, aumentando la confianza para su implementación práctica en admisión de urgencias.
+* **Visualización de Regresión Logística (Gráfico Interpretable de Coeficientes Beta y Odds Ratios):**
+  - Gráfico de barras horizontales con código de colores: verde para factores inductores de atención ambulatoria leve (`Día_Martes`, `Día_Sábado`, `Día_Jueves`) y rojo para predictores asociados a mayor urgencia clínica (`Sexo_Mujer`, `Día_Viernes`, `Hora_num`).
+* **Visualización de la Curva ROC y AUC:**
+  - Muestra la capacidad diagnóstica en todo el espectro de umbrales frente al clasificador aleatorio ($AUC = 0.500$).
+* **Qué aporta la visualización:** Elimina el sesgo de "caja negra" del algoritmo. Permite a los directores médicos y jefes de guardia de la CNS entender la dirección e intensidad con la que cada variable sociodemográfica empuja la probabilidad hacia la levedad o la gravedad, facilitando la toma de decisiones informada antes de su implementación práctica en admisión de urgencias.
 """)
 
 add_code("""
-# Pregunta 10 - Visualización 1: Diagrama del Árbol de Decisión Podado
-fig, ax = plt.subplots(figsize=(16, 7.5), dpi=130)
-plot_tree(
-    mejor_arbol,
-    feature_names=list(X.columns),
-    class_names=['Urgente (1-3)', 'No Urgente (4-5)'],
-    filled=True,
-    rounded=True,
-    fontsize=8,
-    ax=ax,
-    precision=2
-)
-ax.set_title(
-    f"Pregunta 10 - Visualización 1: Árbol de Decisión Podado (Profundidad = {mejor_arbol.get_depth()})\\n"
-    "Reglas de Decisión Clínicas para Derivación Rápida en Urgencias (Hospital Obrero N.º 1)",
-    fontsize=12, fontweight='bold', pad=15
-)
-plt.tight_layout()
-plt.show()
-""", display_b64_img=img_tree_b64)
-
-add_code("""
-# Pregunta 10 - Visualización 2: Gráfico de Coeficientes Beta de Regresión Logística
+# Pregunta 10 - Visualización 1: Gráfico Interpretable de Coeficientes Beta
 fig, ax = plt.subplots(figsize=(8, 4.8), dpi=120)
 colores_b = ['#2ca02c' if b > 0 else '#d62728' for b in coef_df['Coeficiente Beta (β)']]
 bars_b = ax.barh(coef_df['Variable Predictora'], coef_df['Coeficiente Beta (β)'], color=colores_b, alpha=0.85, edgecolor='black', linewidth=0.6)
 ax.axvline(0, color='black', lw=1, linestyle='--')
 ax.set_xlabel('Magnitud del Coeficiente Beta (β)', fontsize=10, fontweight='bold')
-ax.set_title('Pregunta 10 - Visualización 2: Gráfico Interpretable de Coeficientes Beta\\n(Verde = Induce Baja Urgencia 4-5 | Rojo = Induce Urgencia Crítica 1-3)', fontsize=11, fontweight='bold', pad=12)
+ax.set_title('Pregunta 10 - Visualización 1: Gráfico Interpretable de Coeficientes Beta\\n(Verde = Induce Baja Urgencia 4-5 | Rojo = Induce Urgencia Crítica 1-3)', fontsize=11, fontweight='bold', pad=12)
 ax.grid(True, axis='x', linestyle=':', alpha=0.6)
 for bar in bars_b:
     w = bar.get_width()
@@ -692,6 +652,23 @@ for bar in bars_b:
 plt.tight_layout()
 plt.show()
 """, display_b64_img=img_coef_b64)
+
+add_code("""
+# Pregunta 10 - Visualización 2: Curva ROC de Regresión Logística
+fpr, tpr, _ = roc_curve(y_test, y_prob_log)
+fig, ax = plt.subplots(figsize=(6.5, 5), dpi=120)
+ax.plot(fpr, tpr, color='#1f77b4', lw=2.5, label=f'Regresión Logística (AUC = {auc_log:.3f})')
+ax.plot([0, 1], [0, 1], color='#d62728', lw=1.8, linestyle='--', label='Clasificador Aleatorio (AUC = 0.500)')
+ax.set_xlim([0.0, 1.0])
+ax.set_ylim([0.0, 1.02])
+ax.set_xlabel('Tasa de Falsos Positivos (1 - Especificidad)', fontsize=10, fontweight='bold')
+ax.set_ylabel('Tasa de Verdaderos Positivos (Sensibilidad / Recall)', fontsize=10, fontweight='bold')
+ax.set_title('Pregunta 10 - Visualización 2: Curva ROC del Modelo Diagnóstico\\nRegresión Logística - Triaje Urgencias (Hospital Obrero N.º 1)', fontsize=11, fontweight='bold', pad=12)
+ax.legend(loc='lower right', fontsize=10, frameon=True)
+ax.grid(True, linestyle=':', alpha=0.6)
+plt.tight_layout()
+plt.show()
+""", display_b64_img=img_roc_b64)
 
 # Conclusión
 add_md("""
@@ -731,12 +708,6 @@ os.makedirs(folder_task, exist_ok=True)
 out_folder = os.path.join(folder_task, 'h3_03_evaluacion1_grupal_proyecto_crisp.ipynb')
 with open(out_folder, 'w', encoding='utf-8') as f:
     json.dump(notebook_dict, f, ensure_ascii=False, indent=2)
-
-# Copiar dataset y guía a la carpeta para que sea 100% autónoma
-shutil.copy2(CSV_PATH, os.path.join(folder_task, 'dataset_hospital_obredo_triaje.csv'))
-guia_src = os.path.join(BASE_DIR, 'GUIA_EVALUACION_10_PREGUNTAS_CRISP_DM.md')
-if os.path.exists(guia_src):
-    shutil.copy2(guia_src, os.path.join(folder_task, 'GUIA_EVALUACION_10_PREGUNTAS_CRISP_DM.md'))
 
 print(f"[OK] Cuaderno oficial generado en la raíz: {out_root}")
 print(f"[OK] Carpeta de entrega organizada: {folder_task}")
